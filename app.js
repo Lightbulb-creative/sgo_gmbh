@@ -8,6 +8,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initModal();
   initContactForm();
   setActiveNavLink();
+  if (document.querySelector('[data-modal]')) {
+    loadWohnungenFromSheet();
+  }
 });
 
 /* --- Hero Slider --- */
@@ -126,7 +129,10 @@ function initModal() {
   document.querySelectorAll('[data-modal]').forEach(card => {
     card.addEventListener('click', () => openModal(card.dataset.modal));
     card.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') openModal(card.dataset.modal);
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openModal(card.dataset.modal);
+      }
     });
   });
 
@@ -141,10 +147,13 @@ function initModal() {
   });
 }
 
+let openModalId = null;
+
 function openModal(id) {
   const data = WOHNUNGEN[id];
   if (!data) return;
   const overlay = document.getElementById('modalOverlay');
+  openModalId = id;
 
   document.getElementById('modalNr').textContent = `Projekt Bahnhofstraße 46 · ${data.nr}`;
   document.getElementById('modalTitle').textContent = data.title;
@@ -161,12 +170,15 @@ function openModal(id) {
 }
 
 window.closeModal = function() {
-  document.getElementById('modalOverlay').classList.remove('open');
+  const overlay = document.getElementById('modalOverlay');
+  if (!overlay) return;
+  overlay.classList.remove('open');
   document.body.style.overflow = '';
+  openModalId = null;
 };
 
 /* --- Wohnungen Data --- */
-const WOHNUNGEN = {
+let WOHNUNGEN = {
   w1: {
     nr: 'Wohnung 1', title: 'Wohnung 1 – Erdgeschoss',
     img: 'assets/images/grundriss-wohnung-1.png',
@@ -222,6 +234,98 @@ const WOHNUNGEN = {
     desc: 'Luxuriöses Penthouse der Extraklasse. Das Beste aus Architektur, Lage und Ausstattung vereint in einer einzigartigen Wohnung im Dachgeschoss.'
   }
 };
+
+/* --- Sheet CSV Loader --- */
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSsBysgndiZ4zgS7IOKrUZ_0TYZzln38el05QmfmY0XdPu4YihxTjPjXrGg16yaP4AVPQzgAjcj2nv-/pub?gid=0&single=true&output=csv';
+const STATUS_CLASS = { 'Verfügbar': 'available', 'Reserviert': 'reserved', 'Verkauft': 'sold' };
+
+function parseCSVLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+async function loadWohnungenFromSheet() {
+  try {
+    const res = await fetch(SHEET_CSV_URL);
+    if (!res.ok) throw new Error();
+    const text = await res.text();
+    const lines = text.trim().split(/\r?\n/);
+    // line 0: headers, line 1: PL/DE labels (skip), line 2+: data
+    const headers = parseCSVLine(lines[0]);
+    const parsed = {};
+    for (let i = 2; i < lines.length; i++) {
+      const values = parseCSVLine(lines[i]);
+      if (!values.length || !values[0]) continue;
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = values[idx] || ''; });
+      const id = row.id;
+      if (!id || !/^w\d+$/.test(id)) continue;
+      const num = parseInt(id.slice(1), 10);
+      if (Number.isNaN(num) || num < 1) continue;
+      parsed[id] = {
+        nr: row.number,
+        title: `${row.number} – ${row.floor}`,
+        img: `assets/images/grundriss-wohnung-${num}.png`,
+        etage: row.floor,
+        zimmer: row.rooms,
+        flaeche: row.area,
+        preis: row.price,
+        status: row.status,
+        desc: row.desc
+      };
+    }
+    if (Object.keys(parsed).length > 0) {
+      WOHNUNGEN = parsed;
+    }
+  } catch {
+    // fallback: keep hardcoded WOHNUNGEN
+  }
+  updateCards();
+}
+
+function updateCards() {
+  document.querySelectorAll('[data-modal]').forEach(card => {
+    const data = WOHNUNGEN[card.dataset.modal];
+    if (!data) return;
+    const nrEl = card.querySelector('.wohnung-card__nr');
+    if (nrEl && data.nr) nrEl.textContent = data.nr;
+    const titleEl = card.querySelector('.wohnung-card__title');
+    if (titleEl && data.etage) titleEl.textContent = data.etage;
+    const priceEl = card.querySelector('.wohnung-card__price');
+    if (priceEl && data.preis) priceEl.textContent = data.preis;
+    const statusEl = card.querySelector('.wohnung-card__status');
+    if (statusEl && data.status) {
+      statusEl.textContent = data.status;
+      statusEl.className = `wohnung-card__status wohnung-card__status--${STATUS_CLASS[data.status] || 'available'}`;
+    }
+  });
+
+  if (openModalId) {
+    const overlay = document.getElementById('modalOverlay');
+    if (overlay && overlay.classList.contains('open')) {
+      openModal(openModalId);
+    }
+  }
+}
 
 /* --- Contact Form --- */
 function initContactForm() {

@@ -655,9 +655,12 @@ input, textarea, select { font-family: inherit; outline: none; }
 }
 .wohnung-card__status {
   font-size: var(--fs-small);
-  color: var(--text-muted);
+  font-weight: 600;
   margin-bottom: var(--space-md);
 }
+.wohnung-card__status--available { color: #2d7a3a; }
+.wohnung-card__status--reserved  { color: #b45309; }
+.wohnung-card__status--sold      { color: #b91c1c; }
 .wohnung-card__footer {
   display: flex;
   align-items: center;
